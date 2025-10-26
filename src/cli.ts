@@ -25,14 +25,22 @@ interface CliOptions {
   keepOriginalName: boolean;
   verbose: boolean;
   timeout: number;
-  trackers: string[];
+  trackers: string | string[];
   dht: boolean;
+}
+
+function parseTrackers(input: unknown): string[] {
+  if (!input) return [];
+  if (Array.isArray(input)) {
+    return input.flatMap((x: any) => x.toString().split(',')).map((s: string) => s.trim()).filter(Boolean);
+  }
+  return input.toString().split(',').map((s: string) => s.trim()).filter(Boolean);
 }
 
 program
   .name('torrent-subx')
   .description('Advanced torrent subtitle extraction tool')
-  .version('1.0.0');
+  .version('1.0.2');
 
 program
   .command('extract')
@@ -58,10 +66,9 @@ program
     let extractor: TorrentExtractor | undefined;
     
     try {
-      // Ensure output directory exists
       await fs.ensureDir(options.output);
       
-      const trackers = options.trackers ? options.trackers.split(',').map(t => t.trim()) : [];
+      const trackers = parseTrackers(options.trackers);
       
       extractor = new TorrentExtractor({
         rateLimit: options.rateLimit,
@@ -92,11 +99,9 @@ program
         spinner.text = `Processing: ${path.basename(source)}`;
         
         try {
-          // Step 1: Parse torrent and get file list
           const torrentInfo = await extractor.parseTorrent(source);
           console.log(chalk.blue(`\nFound ${torrentInfo.files.length} files in torrent: ${torrentInfo.name}`));
           
-          // Step 2: Filter subtitle candidates
           const candidates = await extractor.filterSubtitleCandidates(torrentInfo);
           console.log(chalk.green(`Found ${candidates.length} subtitle candidates`));
           
@@ -105,10 +110,8 @@ program
             continue;
           }
           
-          // Set torrent info for processor
           processor.setTorrentInfo(extractor, torrentInfo.infoHash!);
           
-          // Step 3: Extract subtitles
           let extractedCount = 0;
           for (const candidate of candidates) {
             spinner.text = `Extracting: ${candidate.path}`;
@@ -121,17 +124,14 @@ program
               continue;
             }
             
-            // Step 4: Detect language
             const language = await languageDetector.detect(extracted);
             
-            // Step 5: Generate output filename
             const outputFilename = namingFormatter.format({
               originalPath: extracted.originalPath,
               language: language,
               extension: extracted.format
             });
             
-            // Step 6: Save to output directory
             const outputPath = path.join(options.output, outputFilename);
             await fs.writeFile(outputPath, extracted.content);
             
@@ -173,7 +173,7 @@ program
     let extractor: TorrentExtractor | undefined;
     
     try {
-      const trackers = options.trackers ? options.trackers.split(',').map((t: string) => t.trim()) : [];
+      const trackers = parseTrackers(options.trackers);
       
       extractor = new TorrentExtractor({
         verbose: options.verbose,
@@ -193,7 +193,7 @@ program
       const candidates = await extractor.filterSubtitleCandidates(torrentInfo);
       
       console.log(chalk.green(`\nSubtitle candidates (${candidates.length}):`));
-      candidates.forEach((file, index) => {
+      candidates.forEach((file: any, index: number) => {
         const type = file.container === 'external' ? '[EXT]' : `[${file.container?.toUpperCase()}]`;
         console.log(`${index + 1}. ${type} ${file.path} (${formatBytes(file.length)})`);
       });
@@ -236,7 +236,6 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Handle uncaught errors
 process.on('uncaughtException', (error) => {
   console.error(chalk.red('Uncaught Exception:'), error);
   process.exit(1);
