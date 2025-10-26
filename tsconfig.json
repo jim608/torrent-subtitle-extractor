@@ -17,7 +17,8 @@
     "emitDecoratorMetadata": true,
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    "typeRoots": ["./src/types", "./node_modules/@types"]
   },
   "include": [
     "src/**/*"
