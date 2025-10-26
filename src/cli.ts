@@ -24,6 +24,9 @@ interface CliOptions {
   prefixEpisode: boolean;
   keepOriginalName: boolean;
   verbose: boolean;
+  timeout: number;
+  trackers: string[];
+  dht: boolean;
 }
 
 program
@@ -40,6 +43,9 @@ program
   .option('-l, --lang <languages>', 'Target languages (comma-separated)', 'zh,zh-TW,ja')
   .option('-t, --bilingual-threshold <number>', 'Bilingual detection threshold', '0.03')
   .option('-r, --rate-limit <size>', 'Download rate limit', '512k')
+  .option('--timeout <ms>', 'Metadata timeout in milliseconds', '15000')
+  .option('--trackers <list>', 'Additional trackers (comma-separated)', '')
+  .option('--no-dht', 'Disable DHT')
   .option('--allow-full-download', 'Allow temporary full download if needed', false)
   .option('--emit-sup', 'Output PGS subtitle files (.sup)', false)
   .option('--skip-sup', 'Skip PGS subtitles completely', false)
@@ -49,14 +55,21 @@ program
   .action(async (sources: string[], options: CliOptions) => {
     const spinner = ora('Initializing subtitle extraction...').start();
     
+    let extractor: TorrentExtractor | undefined;
+    
     try {
       // Ensure output directory exists
       await fs.ensureDir(options.output);
       
-      const extractor = new TorrentExtractor({
+      const trackers = options.trackers ? options.trackers.split(',').map(t => t.trim()) : [];
+      
+      extractor = new TorrentExtractor({
         rateLimit: options.rateLimit,
         allowFullDownload: options.allowFullDownload,
-        verbose: options.verbose
+        verbose: options.verbose,
+        timeout: parseInt(options.timeout.toString()),
+        trackers: trackers,
+        dht: options.dht
       });
       
       const processor = new SubtitleProcessor({
@@ -81,7 +94,7 @@ program
         try {
           // Step 1: Parse torrent and get file list
           const torrentInfo = await extractor.parseTorrent(source);
-          console.log(chalk.blue(`\\nFound ${torrentInfo.files.length} files in torrent`));
+          console.log(chalk.blue(`\nFound ${torrentInfo.files.length} files in torrent: ${torrentInfo.name}`));
           
           // Step 2: Filter subtitle candidates
           const candidates = await extractor.filterSubtitleCandidates(torrentInfo);
@@ -92,19 +105,28 @@ program
             continue;
           }
           
+          // Set torrent info for processor
+          processor.setTorrentInfo(extractor, torrentInfo.infoHash!);
+          
           // Step 3: Extract subtitles
+          let extractedCount = 0;
           for (const candidate of candidates) {
             spinner.text = `Extracting: ${candidate.path}`;
             
             const extracted = await processor.extractSubtitle(candidate);
-            if (!extracted) continue;
+            if (!extracted) {
+              if (candidate.container !== 'external') {
+                console.log(chalk.yellow(`Skipping embedded subtitle (not yet supported): ${candidate.path}`));
+              }
+              continue;
+            }
             
             // Step 4: Detect language
             const language = await languageDetector.detect(extracted);
             
             // Step 5: Generate output filename
             const outputFilename = namingFormatter.format({
-              originalPath: candidate.path,
+              originalPath: extracted.originalPath,
               language: language,
               extension: extracted.format
             });
@@ -114,10 +136,13 @@ program
             await fs.writeFile(outputPath, extracted.content);
             
             console.log(chalk.green(`✓ Saved: ${outputFilename}`));
+            extractedCount++;
           }
           
+          console.log(chalk.blue(`Completed ${extractedCount} extractions for ${torrentInfo.name}`));
+          
         } catch (error) {
-          console.error(chalk.red(`Error processing ${source}:`), error);
+          console.error(chalk.red(`Error processing ${source}:`), (error as Error).message);
         }
       }
       
@@ -125,8 +150,12 @@ program
       
     } catch (error) {
       spinner.fail('Extraction failed');
-      console.error(chalk.red('Error:'), error);
+      console.error(chalk.red('Error:'), (error as Error).message);
       process.exit(1);
+    } finally {
+      if (extractor) {
+        await extractor.cleanup();
+      }
     }
   });
 
@@ -134,29 +163,48 @@ program
   .command('list')
   .description('List files in torrent without downloading')
   .argument('<source>', 'Torrent file or magnet link')
-  .action(async (source: string) => {
+  .option('--timeout <ms>', 'Metadata timeout in milliseconds', '15000')
+  .option('--trackers <list>', 'Additional trackers (comma-separated)', '')
+  .option('--no-dht', 'Disable DHT')
+  .option('-v, --verbose', 'Verbose logging', false)
+  .action(async (source: string, options: any) => {
     const spinner = ora('Reading torrent info...').start();
     
+    let extractor: TorrentExtractor | undefined;
+    
     try {
-      const extractor = new TorrentExtractor({ verbose: true });
+      const trackers = options.trackers ? options.trackers.split(',').map((t: string) => t.trim()) : [];
+      
+      extractor = new TorrentExtractor({
+        verbose: options.verbose,
+        timeout: parseInt(options.timeout),
+        trackers: trackers,
+        dht: options.dht
+      });
+      
       const torrentInfo = await extractor.parseTorrent(source);
       
       spinner.succeed('Torrent info loaded');
       
-      console.log(chalk.blue(`\\nTorrent: ${torrentInfo.name}`));
+      console.log(chalk.blue(`\nTorrent: ${torrentInfo.name}`));
       console.log(chalk.blue(`Files: ${torrentInfo.files.length}`));
       console.log(chalk.blue(`Total size: ${formatBytes(torrentInfo.length)}`));
       
       const candidates = await extractor.filterSubtitleCandidates(torrentInfo);
       
-      console.log(chalk.green(`\\nSubtitle candidates (${candidates.length}):`));
+      console.log(chalk.green(`\nSubtitle candidates (${candidates.length}):`));
       candidates.forEach((file, index) => {
-        console.log(`${index + 1}. ${file.path} (${formatBytes(file.length)})`);
+        const type = file.container === 'external' ? '[EXT]' : `[${file.container?.toUpperCase()}]`;
+        console.log(`${index + 1}. ${type} ${file.path} (${formatBytes(file.length)})`);
       });
       
     } catch (error) {
       spinner.fail('Failed to read torrent');
-      console.error(chalk.red('Error:'), error);
+      console.error(chalk.red('Error:'), (error as Error).message);
+    } finally {
+      if (extractor) {
+        await extractor.cleanup();
+      }
     }
   });
 
@@ -175,7 +223,7 @@ program
         host: options.host
       });
     } catch (error) {
-      console.error(chalk.red('Failed to start web server:'), error);
+      console.error(chalk.red('Failed to start web server:'), (error as Error).message);
       process.exit(1);
     }
   });
