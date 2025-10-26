@@ -1,6 +1,6 @@
 {
   "name": "torrent-subtitle-extractor",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Advanced torrent subtitle extraction tool with multi-language detection, container format support, and intelligent naming",
   "main": "dist/index.js",
   "bin": {
@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node src/cli.ts",
-    "web": "ts-node src/web/server.ts",
+    "dev": "node --loader ts-node/esm --experimental-specifier-resolution=node src/cli.ts",
+    "web": "node --loader ts-node/esm --experimental-specifier-resolution=node src/web/server.ts",
     "start": "node dist/cli.js",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
