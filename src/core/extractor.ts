@@ -45,12 +45,12 @@ export class TorrentExtractor {
   private client: WebTorrent.Instance;
   
   constructor(private opts: ExtractorOptions = {}) {
-    this.client = new WebTorrent({
+    this.client = new (WebTorrent as any)({
       dht: opts.dht !== false,
       tracker: true,
       lsd: true,
       maxConns: opts.allowFullDownload ? 100 : 10
-    });
+    }) as WebTorrent.Instance;
   }
 
   async parseTorrent(source: string): Promise<TorrentInfo> {
@@ -77,14 +77,14 @@ export class TorrentExtractor {
         console.log('Adding torrent with trackers:', torrentId.length > 100 ? torrentId.slice(0, 100) + '...' : torrentId);
       }
 
-      const torrent = this.client.add(torrentId, {
+      const torrent = (this.client as any).add(torrentId, {
         announce: this.opts.trackers || DEFAULT_TRACKERS
       });
 
       torrent.on('ready', () => {
         clearTimeout(timeoutHandle);
         
-        const files: TorrentInfoFile[] = torrent.files.map(file => ({
+        const files: TorrentInfoFile[] = torrent.files.map((file: any) => ({
           path: file.path,
           length: file.length
         }));
@@ -101,7 +101,7 @@ export class TorrentExtractor {
         });
       });
 
-      torrent.on('error', (err) => {
+      torrent.on('error', (err: any) => {
         clearTimeout(timeoutHandle);
         reject(new Error(`Torrent error: ${err.message}`));
       });
@@ -165,14 +165,14 @@ export class TorrentExtractor {
   async downloadFile(infoHash: string, filePath: string, outputPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       // Find existing torrent by hash
-      const torrent = this.client.get(infoHash);
+      const torrent = (this.client as any).get(infoHash);
       if (!torrent) {
         reject(new Error('Torrent not found for downloading'));
         return;
       }
 
       // Find the specific file
-      const file = torrent.files.find(f => f.path === filePath);
+      const file = torrent.files.find((f: any) => f.path === filePath);
       if (!file) {
         reject(new Error(`File not found: ${filePath}`));
         return;
@@ -202,7 +202,7 @@ export class TorrentExtractor {
 
   async cleanup(): Promise<void> {
     return new Promise((resolve) => {
-      this.client.destroy(() => {
+      (this.client as any).destroy(() => {
         if (this.opts.verbose) {
           console.log('WebTorrent client destroyed');
         }
