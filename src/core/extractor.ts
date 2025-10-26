@@ -1,4 +1,3 @@
-import WebTorrent from 'webtorrent';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -27,7 +26,7 @@ export interface SubtitleCandidate {
   path: string;
   length: number;
   container?: 'mkv' | 'mp4' | 'external';
-  torrentFile?: any; // WebTorrent file object for downloading
+  torrentFile?: any;
 }
 
 const DEFAULT_TRACKERS = [
@@ -41,19 +40,28 @@ const DEFAULT_TRACKERS = [
   'https://tr.bangumi.moe:9696/announce'
 ];
 
+// Dynamic import to avoid ERR_REQUIRE_ASYNC_MODULE with WebTorrent ESM
+async function createWebTorrentClient(options: any): Promise<any> {
+  const mod = await import('webtorrent');
+  const WebTorrentCtor: any = (mod as any).default ?? mod;
+  return new WebTorrentCtor(options);
+}
+
 export class TorrentExtractor {
-  private client: WebTorrent.Instance;
+  private clientPromise: Promise<any>;
   
   constructor(private opts: ExtractorOptions = {}) {
-    this.client = new (WebTorrent as any)({
+    this.clientPromise = createWebTorrentClient({
       dht: opts.dht !== false,
       tracker: true,
       lsd: true,
       maxConns: opts.allowFullDownload ? 100 : 10
-    }) as WebTorrent.Instance;
+    });
   }
 
   async parseTorrent(source: string): Promise<TorrentInfo> {
+    const client = await this.clientPromise;
+    
     return new Promise((resolve, reject) => {
       const timeout = this.opts.timeout || 15000;
       const timeoutHandle = setTimeout(() => {
@@ -77,14 +85,14 @@ export class TorrentExtractor {
         console.log('Adding torrent with trackers:', torrentId.length > 100 ? torrentId.slice(0, 100) + '...' : torrentId);
       }
 
-      const torrent = (this.client as any).add(torrentId, {
+      const torrent = client.add(torrentId, {
         announce: this.opts.trackers || DEFAULT_TRACKERS
       });
 
       torrent.on('ready', () => {
         clearTimeout(timeoutHandle);
         
-        const files: TorrentInfoFile[] = torrent.files.map((file: any) => ({
+        const files: TorrentInfoFile[] = (torrent.files as any[]).map((file: any) => ({
           path: file.path,
           length: file.length
         }));
@@ -163,16 +171,18 @@ export class TorrentExtractor {
   }
 
   async downloadFile(infoHash: string, filePath: string, outputPath: string): Promise<void> {
+    const client = await this.clientPromise;
+    
     return new Promise((resolve, reject) => {
       // Find existing torrent by hash
-      const torrent = (this.client as any).get(infoHash);
+      const torrent = client.get(infoHash);
       if (!torrent) {
         reject(new Error('Torrent not found for downloading'));
         return;
       }
 
       // Find the specific file
-      const file = torrent.files.find((f: any) => f.path === filePath);
+      const file = (torrent.files as any[]).find((f: any) => f.path === filePath);
       if (!file) {
         reject(new Error(`File not found: ${filePath}`));
         return;
@@ -201,8 +211,10 @@ export class TorrentExtractor {
   }
 
   async cleanup(): Promise<void> {
+    const client = await this.clientPromise;
+    
     return new Promise((resolve) => {
-      (this.client as any).destroy(() => {
+      client.destroy(() => {
         if (this.opts.verbose) {
           console.log('WebTorrent client destroyed');
         }
