@@ -36,7 +36,7 @@ declare module 'webtorrent' {
   const WebTorrent: WebTorrentStatic;
   export default WebTorrent;
 
-  // 與既有內容相容的命名空間，提供 WebTorrent.Instance 寫法
+  // Provide namespace for WebTorrent.Instance typing as requested
   namespace WebTorrent {
     type Instance = WebTorrentInstance;
   }
