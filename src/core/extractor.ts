@@ -41,54 +41,64 @@ const DEFAULT_TRACKERS = [
   'https://tr.bangumi.moe:9696/announce'
 ];
 
-// Lazy-loaded WebTorrent client
-let WebTorrentClient: any = null;
-
-// Initialize WebTorrent module (handles ESM/CommonJS compatibility)
-async function getWebTorrentClient(): Promise<any> {
-  if (WebTorrentClient === null) {
-    try {
-      // Use dynamic import for ESM compatibility
-      const mod = await import('webtorrent');
-      WebTorrentClient = (mod as any).default || mod;
-    } catch (err) {
-      throw new Error(`Failed to load WebTorrent: ${err}`);
-    }
-  }
-  return WebTorrentClient;
-}
-
-// Create WebTorrent client instance
-async function createWebTorrentClient(options: any): Promise<any> {
-  const WebTorrent = await getWebTorrentClient();
-  return new WebTorrent(options);
-}
+// Global WebTorrent client instance
+let globalWebTorrentInstance: any = null;
 
 export class TorrentExtractor {
   private client: any = null;
-  private clientReady: Promise<any>;
   
-  constructor(private opts: ExtractorOptions = {}) {
-    this.clientReady = this.initializeClient();
-  }
+  constructor(private opts: ExtractorOptions = {}) {}
 
-  private async initializeClient(): Promise<any> {
-    if (!this.client) {
-      this.client = await createWebTorrentClient({
+  private async getWebTorrentClient(): Promise<any> {
+    if (this.client) {
+      return this.client;
+    }
+
+    // Try to reuse global instance
+    if (globalWebTorrentInstance) {
+      this.client = globalWebTorrentInstance;
+      return this.client;
+    }
+
+    try {
+      if (this.opts.verbose) {
+        console.log('[Extractor] Initializing WebTorrent client...');
+      }
+
+      // Dynamic import with proper ESM handling
+      const WebTorrent = await (async () => {
+        try {
+          const mod = await import('webtorrent');
+          return (mod as any).default || mod;
+        } catch (e) {
+          throw new Error(`Failed to import WebTorrent: ${e}`);
+        }
+      })();
+
+      this.client = new WebTorrent({
         dht: this.opts.dht !== false,
         tracker: true,
         lsd: true,
         maxConns: this.opts.allowFullDownload ? 100 : 10
       });
+
+      globalWebTorrentInstance = this.client;
+
+      if (this.opts.verbose) {
+        console.log('[Extractor] WebTorrent client initialized');
+      }
+
+      return this.client;
+    } catch (err) {
+      throw new Error(`[Extractor] WebTorrent initialization failed: ${err}`);
     }
-    return this.client;
   }
 
   async parseTorrent(source: string): Promise<TorrentInfo> {
-    const client = await this.clientReady;
+    const client = await this.getWebTorrentClient();
     
     return new Promise((resolve, reject) => {
-      const timeout = this.opts.timeout || 15000;
+      const timeout = this.opts.timeout || 30000;
       let timeoutHandle: NodeJS.Timeout | null = setTimeout(() => {
         timeoutHandle = null;
         reject(new Error(`Timeout after ${timeout}ms getting torrent metadata`));
@@ -97,23 +107,19 @@ export class TorrentExtractor {
       try {
         // Add default trackers if using magnet
         let torrentId = source;
-        if (source.startsWith('magnet:') && this.opts.trackers) {
-          const trackers = [...DEFAULT_TRACKERS, ...this.opts.trackers];
-          const trackerParams = trackers.map(t => `&tr=${encodeURIComponent(t)}`).join('');
+        if (source.startsWith('magnet:')) {
           if (!source.includes('&tr=')) {
+            const trackerParams = DEFAULT_TRACKERS.map(t => `&tr=${encodeURIComponent(t)}`).join('');
             torrentId = source + trackerParams;
           }
-        } else if (source.startsWith('magnet:') && !source.includes('&tr=')) {
-          const trackerParams = DEFAULT_TRACKERS.map(t => `&tr=${encodeURIComponent(t)}`).join('');
-          torrentId = source + trackerParams;
         }
 
         if (this.opts.verbose) {
-          console.log('[Extractor] Adding torrent:', torrentId.length > 100 ? torrentId.slice(0, 100) + '...' : torrentId);
+          console.log('[Extractor] Adding torrent:', torrentId.slice(0, 80) + '...');
         }
 
         const torrent = client.add(torrentId, {
-          announce: this.opts.trackers || DEFAULT_TRACKERS
+          announce: DEFAULT_TRACKERS
         });
 
         const handleReady = () => {
@@ -128,9 +134,10 @@ export class TorrentExtractor {
           }));
 
           if (this.opts.verbose) {
-            console.log(`[Extractor] Torrent ready: ${torrent.name}, ${files.length} files, ${this.formatBytes(torrent.length)}`);
+            console.log(`[Extractor] Torrent ready: ${torrent.name} (${files.length} files, ${this.formatBytes(torrent.length)})`);
           }
 
+          // Clean up listeners
           torrent.removeListener('ready', handleReady);
           torrent.removeListener('error', handleError);
           
@@ -148,16 +155,17 @@ export class TorrentExtractor {
             timeoutHandle = null;
           }
           
+          // Clean up listeners
           torrent.removeListener('ready', handleReady);
           torrent.removeListener('error', handleError);
           
-          reject(new Error(`Torrent error: ${err.message}`));
+          reject(new Error(`[Extractor] Torrent error: ${err.message || err}`));
         };
 
-        torrent.on('ready', handleReady);
-        torrent.on('error', handleError);
+        torrent.once('ready', handleReady);
+        torrent.once('error', handleError);
 
-        // Progress logging for verbose mode
+        // Progress logging
         if (this.opts.verbose) {
           let lastProgress = -1;
           const progressInterval = setInterval(() => {
@@ -167,15 +175,13 @@ export class TorrentExtractor {
             }
             const progress = Math.floor(torrent.progress * 100);
             if (progress !== lastProgress && progress > 0) {
-              console.log(`[Extractor] Metadata progress: ${progress}%`);
+              console.log(`[Extractor] Metadata: ${progress}%`);
               lastProgress = progress;
             }
-          }, 1000);
+          }, 2000);
         }
       } catch (err) {
-        if (timeoutHandle) {
-          clearTimeout(timeoutHandle);
-        }
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         reject(err);
       }
     });
@@ -199,7 +205,6 @@ export class TorrentExtractor {
           container: 'external'
         });
       } else if (isContainer) {
-        // Containers will be processed for embedded subtitles
         const containerType = lower.endsWith('.mkv') ? 'mkv' : 'mp4';
         candidates.push({
           path: file.path,
@@ -210,9 +215,9 @@ export class TorrentExtractor {
     }
 
     if (this.opts.verbose) {
-      console.log(`[Extractor] Found ${candidates.length} subtitle candidates:`);
-      candidates.forEach(c => {
-        console.log(`  ${c.container === 'external' ? '[EXT]' : '[' + c.container?.toUpperCase() + ']'} ${c.path} (${this.formatBytes(c.length)})`);
+      console.log(`[Extractor] Found ${candidates.length} subtitle candidates`);
+      candidates.forEach((c, i) => {
+        console.log(`  [${i + 1}] ${c.container === 'external' ? '[EXT]' : '[' + c.container?.toUpperCase() + ']'} ${c.path} (${this.formatBytes(c.length)})`);
       });
     }
 
@@ -220,43 +225,51 @@ export class TorrentExtractor {
   }
 
   async downloadFile(infoHash: string, filePath: string, outputPath: string): Promise<void> {
-    const client = await this.clientReady;
+    const client = await this.getWebTorrentClient();
     
     return new Promise((resolve, reject) => {
       try {
-        // Find existing torrent by hash
         const torrent = client.get(infoHash);
         if (!torrent) {
-          reject(new Error('Torrent not found for downloading'));
+          reject(new Error('[Extractor] Torrent not found in client'));
           return;
         }
 
-        // Find the specific file
         const file = (torrent.files as any[]).find((f: any) => f.path === filePath);
         if (!file) {
-          reject(new Error(`File not found: ${filePath}`));
+          reject(new Error(`[Extractor] File not found: ${filePath}`));
           return;
         }
 
         if (this.opts.verbose) {
-          console.log(`[Extractor] Downloading file: ${filePath} -> ${outputPath}`);
+          console.log(`[Extractor] Downloading: ${filePath}`);
         }
 
-        // Create readable stream and pipe to output
         const stream = file.createReadStream();
         const writeStream = createWriteStream(outputPath);
         
-        stream.pipe(writeStream);
-        
-        stream.on('error', reject);
-        writeStream.on('error', reject);
-        
-        writeStream.on('finish', () => {
+        const handleError = (err: any) => {
+          stream.removeListener('error', handleError);
+          writeStream.removeListener('error', handleError);
+          writeStream.removeListener('finish', handleFinish);
+          reject(err);
+        };
+
+        const handleFinish = () => {
+          stream.removeListener('error', handleError);
+          writeStream.removeListener('error', handleError);
+          writeStream.removeListener('finish', handleFinish);
           if (this.opts.verbose) {
-            console.log(`[Extractor] Download completed: ${outputPath}`);
+            console.log(`[Extractor] Downloaded: ${outputPath}`);
           }
           resolve();
-        });
+        };
+        
+        stream.on('error', handleError);
+        writeStream.on('error', handleError);
+        writeStream.on('finish', handleFinish);
+        
+        stream.pipe(writeStream);
       } catch (err) {
         reject(err);
       }
@@ -269,10 +282,10 @@ export class TorrentExtractor {
     return new Promise((resolve) => {
       this.client.destroy((err?: any) => {
         if (err && this.opts.verbose) {
-          console.error('[Extractor] Error during cleanup:', err);
+          console.error('[Extractor] Cleanup error:', err);
         }
         if (this.opts.verbose) {
-          console.log('[Extractor] WebTorrent client destroyed');
+          console.log('[Extractor] Client cleaned up');
         }
         this.client = null;
         resolve();
