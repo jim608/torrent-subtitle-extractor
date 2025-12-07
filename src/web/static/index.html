@@ -338,11 +338,6 @@
                 </div>
             </div>
 
-            <div class="option-group">
-                <label for="rateLimit">下載速率限制</label>
-                <input type="text" id="rateLimit" name="rateLimit" value="512k" placeholder="512k, 1m, unlimited" />
-            </div>
-
             <div class="button-group">
                 <button type="submit" class="btn-primary" id="submitBtn">開始提取字幕</button>
                 <button type="reset" class="btn-secondary">重置</button>
@@ -421,11 +416,9 @@
 
             const langs = Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(el => el.value).join(',');
             const exts = Array.from(document.querySelectorAll('input[name="ext"]:checked')).map(el => el.value).join(',');
-            const rateLimit = document.getElementById('rateLimit').value || '512k';
 
             formData.append('lang', langs);
             formData.append('ext', exts);
-            formData.append('rateLimit', rateLimit);
 
             progressSection.classList.add('show');
             results.classList.remove('show');
