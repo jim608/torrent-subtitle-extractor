@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Torrent Subtitle Extractor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #f8f9ff;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .upload-area.dragging {
+            border-color: #764ba2;
+            background: #e8ecff;
+        }
+
+        .upload-area input[type="file"] {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+
+        .upload-area p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .upload-area .small {
+            color: #999;
+            font-size: 12px;
+        }
+
+        .options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .option-group {
+            margin-bottom: 15px;
+        }
+
+        .option-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .option-group input,
+        .option-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #333;
+            font-family: inherit;
+        }
+
+        .option-group input:focus,
+        .option-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 8px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            margin-right: 6px;
+            cursor: pointer;
+        }
+
+        .checkbox-item label {
+            margin: 0;
+            font-weight: normal;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .progress-section {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        .progress-section.show {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .status-message {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .results {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .result-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .result-item:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 Torrent Subtitle Extractor</h1>
+            <p>只下載字幕，不下載影片</p>
+        </div>
+
+        <form id="extractForm">
+            <div class="form-group">
+                <label>上傳 Torrent 檔案或輸入磁力連結</label>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="torrentFile" accept=".torrent" />
+                    <div class="upload-icon">📁</div>
+                    <p>拖曳 .torrent 檔案到此處，或點擊選擇</p>
+                    <p class="small">或輸入磁力連結</p>
+                    <input type="text" id="magnetLink" placeholder="magnet:?xt=urn:btih:..." style="margin-top: 10px; width: 100%;" />
+                </div>
+            </div>
+
+            <div class="options">
+                <div class="option-group">
+                    <label for="langSelect">字幕語言</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="langZh" name="lang" value="zh" checked />
+                            <label for="langZh">簡體中文</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="langZhTW" name="lang" value="zh-TW" checked />
+                            <label for="langZhTW">繁體中文</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="langJa" name="lang" value="ja" checked />
+                            <label for="langJa">日文</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <label for="extSelect">字幕格式</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="extAss" name="ext" value="ass" checked />
+                            <label for="extAss">ASS</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="extSrt" name="ext" value="srt" checked />
+                            <label for="extSrt">SRT</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="extVtt" name="ext" value="vtt" />
+                            <label for="extVtt">VTT</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="option-group">
+                <label for="rateLimit">下載速率限制</label>
+                <input type="text" id="rateLimit" name="rateLimit" value="512k" placeholder="512k, 1m, unlimited" />
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn-primary" id="submitBtn">開始提取字幕</button>
+                <button type="reset" class="btn-secondary">重置</button>
+            </div>
+        </form>
+
+        <div class="progress-section" id="progressSection">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="status-message info" id="statusMessage">正在處理...</div>
+        </div>
+
+        <div class="results" id="results">
+            <h3 style="margin-bottom: 15px; color: #333;">提取結果</h3>
+            <div id="resultList"></div>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const torrentFile = document.getElementById('torrentFile');
+        const magnetLink = document.getElementById('magnetLink');
+        const extractForm = document.getElementById('extractForm');
+        const progressSection = document.getElementById('progressSection');
+        const progressFill = document.getElementById('progressFill');
+        const statusMessage = document.getElementById('statusMessage');
+        const results = document.getElementById('results');
+        const resultList = document.getElementById('resultList');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // File upload handling
+        uploadArea.addEventListener('click', () => torrentFile.click());
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragging');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragging');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragging');
+            if (e.dataTransfer.files.length > 0) {
+                torrentFile.files = e.dataTransfer.files;
+            }
+        });
+
+        torrentFile.addEventListener('change', () => {
+            if (torrentFile.files.length > 0) {
+                magnetLink.value = '';
+            }
+        });
+
+        magnetLink.addEventListener('input', () => {
+            if (magnetLink.value.trim()) {
+                torrentFile.value = '';
+            }
+        });
+
+        // Form submission
+        extractForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!torrentFile.files.length && !magnetLink.value.trim()) {
+                alert('請選擇 Torrent 檔案或輸入磁力連結');
+                return;
+            }
+
+            const formData = new FormData();
+            if (torrentFile.files.length > 0) {
+                formData.append('torrent', torrentFile.files[0]);
+            } else {
+                formData.append('magnetLink', magnetLink.value);
+            }
+
+            const langs = Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(el => el.value).join(',');
+            const exts = Array.from(document.querySelectorAll('input[name="ext"]:checked')).map(el => el.value).join(',');
+            const rateLimit = document.getElementById('rateLimit').value || '512k';
+
+            formData.append('lang', langs);
+            formData.append('ext', exts);
+            formData.append('rateLimit', rateLimit);
+
+            progressSection.classList.add('show');
+            results.classList.remove('show');
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/extract', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    progressFill.style.width = '100%';
+                    statusMessage.textContent = '✓ 提取完成！';
+                    statusMessage.classList.remove('info');
+                    statusMessage.classList.add('success');
+
+                    if (data.subtitles && data.subtitles.length > 0) {
+                        resultList.innerHTML = data.subtitles.map(sub => 
+                            `<div class="result-item">✓ ${sub}</div>`
+                        ).join('');
+                        results.classList.add('show');
+                    }
+                } else {
+                    statusMessage.textContent = '✗ 錯誤: ' + (data.error || '未知錯誤');
+                    statusMessage.classList.remove('info');
+                    statusMessage.classList.add('error');
+                }
+            } catch (error) {
+                statusMessage.textContent = '✗ 請求失敗: ' + error.message;
+                statusMessage.classList.remove('info');
+                statusMessage.classList.add('error');
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
