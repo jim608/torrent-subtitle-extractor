@@ -40,7 +40,7 @@ function parseTrackers(input: unknown): string[] {
 program
   .name('torrent-subx')
   .description('Advanced torrent subtitle extraction tool')
-  .version('1.0.2');
+  .version('1.0.3');
 
 program
   .command('extract')
