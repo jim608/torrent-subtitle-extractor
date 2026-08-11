@@ -1,352 +1,231 @@
 # Torrent Subtitle Extractor
 
-Advanced torrent subtitle extraction tool with multi-language detection, container format support, and intelligent naming.
+[![CI](https://github.com/jim608/torrent-subtitle-extractor/actions/workflows/ci.yml/badge.svg)](https://github.com/jim608/torrent-subtitle-extractor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-brightgreen.svg)](package.json)
 
-## 功能特色
+A TypeScript tool for discovering and selectively downloading subtitle files from `.torrent` files and magnet links, with Chinese/Japanese language heuristics, standardized naming, CLI workflows, and a basic Web UI.
 
-- 🚀 **選擇性下載**：僅下載字幕檔案，不下載完整影片
-- 📁 **多容器支援**：支援 MKV、MP4 內嵌字幕抽取
-- 🌐 **多語言偵測**：自動識別簡體、繁體、日文與雙語字幕
-- 🏷️ **智能命名**：自動依語言生成標準化檔名
-- 📺 **季集識別**：自動加入 S01E02 前綴
-- 🎨 **圖形字幕**：支援 PGS (.sup) 字幕輸出
-- 🌐 **Web 介面**：提供友善的網頁上傳與管理介面
-- ⚡ **批次處理**：同時處理多個 torrent 或磁力連結
+繁體中文：這是一個用來從 torrent / magnet 中找出字幕候選檔並優先下載字幕的開源工具，支援繁中、簡中、日文與中日雙語的基本辨識及標準化命名。
 
-## 安裝需求
+## Why this project exists
 
-### 系統需求
+Large media torrents often contain subtitle files that are tiny compared with the video payload. Torrent Subtitle Extractor is designed to inspect torrent metadata, identify subtitle candidates, and retrieve the subtitle files without intentionally downloading the full video payload when the subtitle is available as a separate file.
 
-- Node.js >= 18.0.0
-- npm 或 bun
+The project focuses on:
 
-### 外部依賴
+- selective subtitle retrieval through WebTorrent
+- `.torrent` files and magnet links
+- ASS, SRT, VTT, and optional PGS/SUP output
+- heuristic Traditional Chinese, Simplified Chinese, Japanese, and mixed Chinese/Japanese detection
+- standardized language-aware filenames
+- episode-prefix detection such as `S01E02`
+- CLI and Web UI workflows
 
-必須先安裝以下工具：
+## Project status
 
-#### MKVToolNix (處理 MKV 檔案)
+The project is actively maintained and currently targets Node.js 18 or newer.
 
-```bash
-# Ubuntu/Debian
-sudo apt update && sudo apt install mkvtoolnix
+**Implemented today:** external subtitle files contained in a torrent can be discovered and downloaded selectively.
 
-# macOS
-brew install mkvtoolnix
+**In progress / not yet implemented:** extracting embedded subtitle tracks from MKV or MP4 containers. The current code can identify container candidates, but embedded-track extraction is intentionally reported as unsupported instead of pretending that it succeeded.
 
-# Windows
-# 下載安裝： https://mkvtoolnix.download/
-```
+This distinction matters because the project aims to keep documentation aligned with actual behavior.
 
-#### FFmpeg (處理 MP4 檔案)
+## Quick start
 
-```bash
-# Ubuntu/Debian
-sudo apt update && sudo apt install ffmpeg
+### Requirements
 
-# macOS
-brew install ffmpeg
+- Node.js 18+
+- npm or Bun
 
-# Windows
-# 下載安裝： https://ffmpeg.org/download.html
-```
-
-## 安裝
+Clone and build:
 
 ```bash
-# 複製專案
 git clone https://github.com/jim608/torrent-subtitle-extractor.git
 cd torrent-subtitle-extractor
-
-# 安裝依賴
 npm install
-# 或使用 bun（推薦，更快速）
-bun install
-
-# 編譯 TypeScript
 npm run build
-# 或
-bun run build
 ```
 
-## 使用方法
-
-### CLI 命令列
-
-#### 1. 列出檔案 (不下載)
+### Inspect a torrent without downloading files
 
 ```bash
-# 查看 torrent 內容與字幕候選
 node dist/cli.js list example.torrent
 node dist/cli.js list "magnet:?xt=urn:btih:..."
-
-# 使用開發模式（需要先更新到最新版本）
-npm run dev list example.torrent
 ```
 
-#### 2. 抽取字幕
+Development mode:
 
 ```bash
-# 基本用法
+npm run dev -- list example.torrent
+```
+
+### Extract external subtitle files
+
+```bash
 node dist/cli.js extract example.torrent
-
-# 指定輸出目錄
 node dist/cli.js extract example.torrent --output ./subtitles
-
-# 多個來源批次處理
 node dist/cli.js extract file1.torrent file2.torrent "magnet:?xt=..." --output ./subs
+```
 
-# 進階選項
+Example with additional options:
+
+```bash
 node dist/cli.js extract example.torrent \
   --output ./subs \
   --ext ass,srt,vtt \
   --lang zh,zh-TW,ja \
-  --bilingual-threshold 0.03 \
   --rate-limit 512k \
-  --allow-full-download \
   --emit-sup \
   --prefix-episode \
   --verbose
 ```
 
-#### 3. 啟動 Web 介面
+On Windows, quote magnet links containing `&tr=` parameters.
+
+## CLI commands
+
+### `list`
+
+Reads torrent metadata and lists files and subtitle candidates without intentionally downloading the media payload.
 
 ```bash
-# 預設 localhost:3000
-npm run web
-
-# 指定埠號與主機
-npm run dev web --port 8080 --host 0.0.0.0
+node dist/cli.js list <torrent-or-magnet> [options]
 ```
 
-**重要提醒：**
-- Windows 系統上，包含 `&tr=` 參數的 magnet 連結必須用雙引號包圍
-- 建議使用編譯後的版本 (`node dist/cli.js`) 以獲得最佳穩定性
+Useful options:
 
-### 命令選項說明
+- `--timeout <ms>` metadata timeout
+- `--trackers <list>` additional comma-separated trackers
+- `--no-dht` disable DHT
+- `--verbose` detailed output
 
-| 選項 | 預設值 | 說明 |
-|------|--------|------|
-| `-o, --output <dir>` | `./subs` | 輸出目錄 |
-| `-e, --ext <extensions>` | `ass,srt,vtt` | 偏好的字幕格式 |
-| `-l, --lang <languages>` | `zh,zh-TW,ja` | 目標語言 |
-| `-t, --bilingual-threshold <number>` | `0.03` | 雙語偵測閾值 |
-| `-r, --rate-limit <size>` | `512k` | 下載速率限制 |
-| `--timeout <ms>` | `15000` | Metadata 取得超時 |
-| `--allow-full-download` | `false` | 必要時允許完整下載 |
-| `--emit-sup` | `false` | 輸出 PGS 字幕檔 (.sup) |
-| `--skip-sup` | `false` | 完全跳過 PGS 字幕 |
-| `--prefix-episode` | `true` | 加入季集前綴 (S01E02) |
-| `--keep-original-name` | `false` | 保留原始檔名 |
-| `-v, --verbose` | `false` | 詳細日誌 |
+### `extract`
 
-## 輸出檔名規則
-
-### 單語言字幕
-
-- 簡體中文：`简体-简体中文.zh.ass`
-- 繁體中文：`繁體-繁體中文.zh-TW.ass`  
-- 日文：`日文.ja.srt`
-
-### 雙語字幕
-
-- 繁體+日文：`繁日-繁日雙語.zh-TW.ass`
-- 簡體+日文：`簡日-簡日雙語.zh.ass`
-
-### 圖形字幕
-
-- PGS 字幕：`圖形字幕.sup`
-
-### 多字幕軌道
-
-同語言多條字幕會加入序號：
-- `繁體-繁體中文.zh-TW.2.ass`
-- `简体-简体中文.zh.3.ass`
-
-### 季集前綴 (開啟 --prefix-episode)
-
-- `S01E02-繁體-繁體中文.zh-TW.ass`
-- `S02E15-繁日-繁日雙語.zh-TW.ass`
-
-## Web 介面
-
-啟動 Web 服務後，在瀏覽器開啟 http://localhost:3000
-
-### 功能
-
-- 📤 上傳 .torrent 檔案或貼上磁力連結
-- 📋 預覽檔案列表與字幕軌道
-- ⚙️ 設定語言與格式偏好  
-- 📊 即時顯示處理進度
-- 💾 批次下載處理結果
-
-## 語言偵測
-
-### 偵測層級
-
-1. **Metadata 層**：檢查容器的語言標籤與軌道名稱
-2. **檔名層**：分析檔名中的語言標示 (chs, cht, tc, sc, jp, 簡, 繁, 日)
-3. **內容層**：抽樣分析文字內容判斷語言特徵
-
-### 雙語判斷
-
-- 繁體字形比例 + 假名比例 > 閾值 → 繁日雙語
-- 簡體字形比例 + 假名比例 > 閾值 → 簡日雙語  
-- 軌道名稱包含 "雙語"、"繁日"、"簡日" → 直接判定
-
-## 支援格式
-
-### 容器格式
-
-- **MKV**：Matroska 容器，支援內嵌 ASS/SRT/VTT/PGS 字幕
-- **MP4**：MPEG-4 容器，支援 mov_text/tx3g 字幕
-
-### 字幕格式
-
-- **ASS/SSA**：Advanced SubStation Alpha (保留樣式)
-- **SRT**：SubRip (純文字)
-- **VTT**：WebVTT (網頁字幕)
-- **PGS**：Presentation Graphic Stream (圖形字幕)
-
-## 故障排除
-
-### 常見錯誤
-
-#### "mkvextract not found"
+Downloads supported external subtitle candidates and writes normalized output filenames.
 
 ```bash
-# 確認 MKVToolNix 已安裝
-which mkvextract
-mkvextract --version
-
-# 若未安裝，參考上方安裝指令
+node dist/cli.js extract <sources...> [options]
 ```
 
-#### "ffmpeg not found"
+Common options:
+
+| Option | Default | Description |
+|---|---|---|
+| `-o, --output <dir>` | `./subs` | Output directory |
+| `-e, --ext <extensions>` | `ass,srt,vtt` | Preferred subtitle extensions |
+| `-l, --lang <languages>` | `zh,zh-TW,ja` | Target language preference |
+| `-r, --rate-limit <size>` | `512k` | Download rate limit |
+| `--timeout <ms>` | `15000` | Metadata timeout |
+| `--trackers <list>` | empty | Additional trackers |
+| `--no-dht` | off | Disable DHT |
+| `--allow-full-download` | false | Allow fallback behavior when required |
+| `--emit-sup` | false | Allow PGS/SUP output |
+| `--skip-sup` | false | Skip PGS/SUP candidates |
+| `--prefix-episode` | true | Add an `S01E02`-style prefix when detected |
+| `--keep-original-name` | false | Preserve additional original-name context where supported |
+| `-v, --verbose` | false | Verbose logging |
+
+## Web UI
+
+Start the Web UI through the CLI:
 
 ```bash
-# 確認 FFmpeg 已安裝
-which ffmpeg
-ffmpeg -version
-
-# 若未安裝，參考上方安裝指令
+node dist/cli.js web --host 0.0.0.0 --port 3000
 ```
 
-#### "No subtitle files found"
-
-可能原因：
-- Torrent 內真的沒有字幕檔案
-- 字幕內嵌在容器中，但偵測失敗
-- 檔名不符合字幕格式規則
-
-解決方法：
+Or in development mode:
 
 ```bash
-# 先用 list 命令檢查檔案列表
-node dist/cli.js list example.torrent
-
-# 使用 --verbose 查看詳細日誌
-node dist/cli.js extract example.torrent --verbose
-
-# 嘗試允許完整下載
-node dist/cli.js extract example.torrent --allow-full-download
-
-# 增加超時時間
-node dist/cli.js extract example.torrent --timeout 30000
+npm run dev -- web --host 0.0.0.0 --port 3000
 ```
 
-#### ESM/CommonJS 模組錯誤
+Then open `http://localhost:3000` when using the default host and port.
 
-如果遇到模組載入錯誤，請：
+The Web UI currently provides a basic upload / magnet-link extraction workflow. It shares the same current limitation as the CLI: embedded subtitle extraction from MKV/MP4 is not yet implemented.
 
-```bash
-# 清理並重新編譯
-npm run clean
-npm run build
+## Language detection
 
-# 使用編譯後版本
-node dist/cli.js list "your-magnet-link"
+Language detection currently uses lightweight text heuristics rather than a heavyweight language model.
+
+The detector checks for:
+
+- Japanese kana
+- representative Traditional Chinese characters
+- representative Simplified Chinese characters
+- mixed Chinese/Japanese text
+
+Current language labels include:
+
+- `zh-TW` → Traditional Chinese
+- `zh` → Simplified Chinese
+- `ja` → Japanese
+- mixed Traditional Chinese + Japanese
+- mixed Simplified Chinese + Japanese
+- unknown
+
+This approach is fast and dependency-light, but contributors are welcome to improve its accuracy.
+
+## Output naming
+
+Examples:
+
+```text
+繁體-繁體中文.zh-TW.ass
+简体-简体中文.zh.srt
+日文.ja.vtt
+S01E02-繁體-繁體中文.zh-TW.ass
 ```
 
-#### 編碼問題
+## Architecture
 
-如果字幕出現亂碼：
-- 工具會自動偵測並轉換為 UTF-8
-- 支援 Big5、GBK、Shift-JIS 等編碼
-- 若仍有問題，請回報具體檔案供改進偵測邏輯
-
-### 效能調整
-
-#### 限制下載速度
-
-```bash
-# 限制為 256KB/s
-node dist/cli.js extract example.torrent --rate-limit 256k
-
-# 限制為 1MB/s  
-node dist/cli.js extract example.torrent --rate-limit 1m
-```
-
-#### 記憶體使用
-
-```bash
-# 設定 Node.js 記憶體上限
-node --max-old-space-size=4096 dist/cli.js extract example.torrent
-```
-
-## 開發
-
-### 開發模式
-
-```bash
-# 監視檔案變更並重新編譯
-npm run dev
-
-# 執行測試
-npm test
-
-# 程式碼檢查
-npm run lint
-
-# 清理編譯檔案
-npm run clean
-```
-
-### 專案結構
-
-```
+```text
 src/
-├── cli.ts                 # CLI 入口點
-├── core/                  # 核心功能模組
-│   ├── extractor.ts       # Torrent 解析與選擇性下載
-│   ├── processor.ts       # 字幕檔案處理
-│   ├── language.ts        # 語言偵測
-│   └── naming.ts          # 檔名格式化
-├── types/                 # TypeScript 型別定義
-│   └── webtorrent.d.ts    # WebTorrent 型別
-└── web/                   # Web 介面
-    ├── server.ts          # Express 服務器
-    ├── routes/            # API 路由
-    └── static/            # 靜態檔案
+├── cli.ts
+├── core/
+│   ├── extractor.ts
+│   ├── processor.ts
+│   ├── language.ts
+│   └── naming.ts
+├── types/
+│   └── webtorrent.d.ts
+└── web/
+    ├── server.ts
+    └── static/
 ```
 
-## 授權
+`extractor.ts` handles torrent metadata and selective downloading. `processor.ts` handles subtitle candidates and output. `language.ts` performs lightweight language classification. `naming.ts` creates normalized filenames. The Web UI uses the same core modules as the CLI.
 
-MIT License - 詳見LICENSE 檔案
+## Development
 
-## 貢獻
+```bash
+npm install
+npm run build
+npm run dev -- list example.torrent
+npm run dev -- web --port 3000
+```
 
-歡迎提交 Issue 和 Pull Request！
+The repository includes a GitHub Actions build workflow for supported Node.js versions.
 
-### 回報問題
+## Contributing
 
-- 提供完整的錯誤訊息
-- 包含作業系統與 Node.js 版本
-- 如可能，提供測試用的 torrent 檔案
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, bug-report requirements, and pull-request guidance.
 
-### 功能建議
+Please do not upload copyrighted media, private tracker credentials, or other sensitive torrent data to public issues.
 
-- 描述具體使用情境
-- 說明預期行為
-- 考慮向後相容性
+## Security
 
-**注意**：本工具僅用於合法的字幕提取用途，請遵守當地法律法規。
+See [SECURITY.md](SECURITY.md) for vulnerability-reporting guidance. Sensitive security details should not be posted publicly.
+
+## Maintainer
+
+Primary maintainer: [@jim608](https://github.com/jim608)
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
+
+## Legal use
+
+This project is intended for lawful subtitle extraction and processing. Users are responsible for complying with applicable copyright law, service terms, and tracker rules.
